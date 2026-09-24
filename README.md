@@ -98,5 +98,3 @@ El proyecto es totalmente autocontenido y funciona de forma directa sin necesida
 * **SVG Vectorial Dinámico**
 
 ---
-
-Desarrollado para la asignatura de **Inteligencia Artificial** (Semestre 8).
