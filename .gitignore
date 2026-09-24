@@ -1,0 +1,11 @@
+# Entorno y archivos temporales
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Logs y temporales
+scratch/
+.system_generated/

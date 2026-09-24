@@ -1,0 +1,1833 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador Educativo de Nim - Minimax y Poda Alfa-Beta</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              max: '#3b82f6',     // Azul para MAX
+              maxLight: '#93c5fd',
+              min: '#ef4444',     // Rojo para MIN
+              minLight: '#fca5a5',
+              surface: '#0f172a',
+              card: '#1e293b',
+              border: '#334155'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Motor Algorítmico NimAnalyzer -->
+  <script src="nimAnalyzer.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #253349;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3b82f6;
+    }
+
+    /* Grid pattern for tree workspace */
+    .tree-grid-bg {
+      background-color: #0b1120;
+      background-image: radial-gradient(rgba(51, 65, 85, 0.4) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    /* Glow utilities */
+    .glow-blue {
+      box-shadow: 0 0 25px -4px rgba(59, 130, 246, 0.35);
+    }
+    .glow-red {
+      box-shadow: 0 0 25px -4px rgba(239, 68, 68, 0.35);
+    }
+    .token-glow {
+      box-shadow: 0 4px 15px -2px rgba(56, 189, 248, 0.4);
+    }
+    .token-pink-glow {
+      box-shadow: 0 4px 15px -2px rgba(236, 72, 153, 0.4);
+    }
+
+    /* Active node halo animation */
+    @keyframes activeRingPulse {
+      0% { r: 23px; stroke-opacity: 1; stroke-width: 3px; }
+      50% { r: 29px; stroke-opacity: 0.35; stroke-width: 4.5px; }
+      100% { r: 23px; stroke-opacity: 1; stroke-width: 3px; }
+    }
+    .active-ring {
+      animation: activeRingPulse 1.8s ease-in-out infinite;
+    }
+
+    /* Pruning active badge glow (NO transform scale to prevent SVG jumping/clipping) */
+    @keyframes pruneGlowPulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.8));
+      }
+      50% {
+        filter: drop-shadow(0 0 16px rgba(239, 68, 68, 1));
+      }
+    }
+    .pruning-badge-active {
+      animation: pruneGlowPulse 1.4s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased selection:bg-blue-600 selection:text-white">
+
+  <!-- TOP HEADER / APP BAR -->
+  <header class="h-16 shrink-0 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 flex items-center justify-between z-30">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+          Simulador de Nim
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            Minimax & Alfa-Beta
+          </span>
+        </h1>
+        <p class="text-xs text-slate-400 hidden sm:block">Recorrido paso a paso en profundidad (DFS) con poda</p>
+      </div>
+    </div>
+
+    <!-- Header status and keyboard helper -->
+    <div class="flex items-center space-x-3 text-xs">
+      <div class="hidden md:flex items-center space-x-2 bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
+        <span>Teclas:</span>
+        <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200 font-mono">◀</kbd>
+        <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200 font-mono">▶</kbd>
+        <span class="text-slate-500">|</span>
+        <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200 font-mono">Espacio</kbd>
+      </div>
+      <div class="flex items-center bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-lg font-mono">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
+        <span class="text-slate-300" id="simStatusText">Motor Listo</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN SPLIT-SCREEN CONTAINER -->
+  <main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+
+    <!-- ========================================== -->
+    <!-- 1. PANEL IZQUIERDO: EL TABLERO Y GUÍA      -->
+    <!-- ========================================== -->
+    <section class="w-full lg:w-[450px] xl:w-[490px] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-800 bg-slate-900/60 flex flex-col overflow-y-auto">
+      
+      <!-- Panel Header -->
+      <div class="p-5 border-b border-slate-800/80">
+        <div class="flex items-center justify-between">
+          <div class="inline-flex items-center space-x-2">
+            <span class="text-blue-400">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </span>
+            <h2 class="text-base font-bold text-slate-100 tracking-tight">El Tablero de Nim</h2>
+          </div>
+          <span id="boardStateBadge" class="text-xs font-mono bg-slate-800 text-blue-300 px-2.5 py-1 rounded-md border border-slate-700/60 font-semibold">
+            Estado: [1, 3]
+          </span>
+        </div>
+      </div>
+
+      <!-- Turn Indicator (Visual Banner) -->
+      <div class="px-5 pt-4">
+        <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
+          <span>Turno en este Estado</span>
+          <span id="actionTypeTag" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800/60">
+            VISITANDO
+          </span>
+        </div>
+        
+        <!-- Dynamic Turn Box -->
+        <div id="turnIndicatorCard" class="relative overflow-hidden rounded-xl border border-blue-500/40 bg-gradient-to-r from-blue-950/40 via-slate-900 to-slate-900 p-3.5 transition-all duration-300 glow-blue">
+          <div class="flex items-center space-x-3">
+            <div id="turnIconContainer" class="w-9 h-9 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+              <svg id="turnIcon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <span class="text-[11px] text-slate-400 font-medium block">Jugador Activo</span>
+              <span id="turnLabel" class="text-sm font-bold text-blue-400 tracking-wide flex items-center gap-1.5 truncate">
+                Turno: MAX (Color Azul)
+                <span id="turnPulseDot" class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+              </span>
+            </div>
+          </div>
+          <div id="turnAccentBar" class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+        </div>
+      </div>
+
+      <!-- Nim Game Board (Pilas de Fichas) -->
+      <div class="px-5 py-3">
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 shadow-inner">
+          
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800/80">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+              Fichas en Mesa
+            </span>
+            <span class="text-xs text-slate-400 font-mono">Total: <strong class="text-slate-200" id="totalTokensCount">4</strong></span>
+          </div>
+
+          <!-- Pilas en 2 columnas compactas -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <!-- Pila 1 -->
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5">
+              <div class="flex items-center justify-between mb-1.5 text-[11px]">
+                <span class="font-medium text-slate-300">Fila 1 (Sup.)</span>
+                <span id="pile-1-count-badge" class="font-mono text-blue-300 font-semibold text-[10px] bg-slate-800 px-1.5 py-0.5 rounded">1 obj</span>
+              </div>
+              <div class="flex items-center justify-center p-2 min-h-[56px] bg-slate-950/60 rounded border border-dashed border-slate-800">
+                <div id="pile-1-container" class="flex items-center justify-center gap-2 flex-wrap"></div>
+              </div>
+            </div>
+
+            <!-- Pila 2 -->
+            <div class="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5">
+              <div class="flex items-center justify-between mb-1.5 text-[11px]">
+                <span class="font-medium text-slate-300">Fila 2 (Inf.)</span>
+                <span id="pile-2-count-badge" class="font-mono text-indigo-300 font-semibold text-[10px] bg-slate-800 px-1.5 py-0.5 rounded">3 obj</span>
+              </div>
+              <div class="flex items-center justify-center p-2 min-h-[56px] bg-slate-950/60 rounded border border-dashed border-slate-800">
+                <div id="pile-2-container" class="flex items-center justify-center gap-2 flex-wrap"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- PANEL DE EXPLICACIÓN DIDÁCTICA DETALLADA       -->
+      <!-- ============================================== -->
+      <div class="flex-1 px-5 py-2 flex flex-col justify-start">
+        <div id="explanationContainer" class="rounded-xl border border-slate-800 bg-slate-900/95 p-4 shadow-xl transition-all">
+          
+          <!-- Encabezado con Fase -->
+          <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-800">
+            <span id="explanationPhaseBadge" class="text-[10px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-full border bg-blue-500/10 text-blue-400 border-blue-500/30">
+              1. INICIO DEL ALGORITMO
+            </span>
+            <span id="explanationStepTag" class="text-[10px] font-mono text-slate-400">
+              Paso 1 / 89
+            </span>
+          </div>
+
+          <!-- Titular del Paso -->
+          <h4 id="explanationHeadline" class="text-xs font-bold text-slate-100 leading-snug mb-2.5">
+            Se inicia el análisis Minimax en el estado inicial [1, 3].
+          </h4>
+
+          <!-- Bloque 1: ¿Qué ocurrió en el juego? -->
+          <div class="mb-2.5 text-[11px] leading-relaxed text-slate-300 flex items-start gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
+            <span class="text-blue-400 mt-0.5 shrink-0 text-xs">🎯</span>
+            <div>
+              <strong class="text-slate-200 block text-[10px] uppercase tracking-wider mb-0.5">Acción en este Paso:</strong>
+              <span id="explanationWhatHappened">Cargando...</span>
+            </div>
+          </div>
+
+          <!-- Bloque 2: Razonamiento Minimax / Alfa-Beta (Destacado y Didáctico) -->
+          <div id="explanationReasoningBox" class="mb-2.5 text-[11px] leading-relaxed text-slate-300 bg-blue-950/20 border border-blue-800/40 p-2.5 rounded-lg">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <span class="text-amber-400 text-xs" id="explanationReasoningIcon">🧠</span>
+              <strong class="text-blue-300 text-[10px] uppercase tracking-wider font-bold" id="explanationReasoningTitle">
+                Razonamiento Minimax & Cotas:
+              </strong>
+            </div>
+            <div id="explanationWhyDecision" class="text-slate-300 leading-relaxed whitespace-pre-line text-[11px]">
+              ...
+            </div>
+          </div>
+
+          <!-- Bloque 3: Impacto / Consecuencia -->
+          <div class="text-[10.5px] text-slate-400 flex items-center justify-between pt-1.5 border-t border-slate-800/80">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+              <span id="explanationNimImpact" class="truncate">Iniciando árbol...</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Playback Controls (Controles de Reproducción) -->
+      <div class="p-5 border-t border-slate-800 bg-slate-900/95 shrink-0">
+        
+        <!-- Step slider bar -->
+        <div class="mb-3.5">
+          <div class="flex items-center justify-between text-xs font-mono mb-1.5">
+            <span class="text-slate-400">Línea de Tiempo del Algoritmo</span>
+            <span id="stepCounterBadge" class="text-blue-400 font-semibold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+              Paso: 0 / 0
+            </span>
+          </div>
+          <input id="stepProgressBar" type="range" min="0" max="0" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none" />
+        </div>
+
+        <!-- 4 Action Buttons -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          
+          <!-- Botón: Paso Anterior -->
+          <button id="btnPrevStep" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 text-slate-200 transition-all duration-150 group shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+            <svg class="w-4 h-4 mb-0.5 text-slate-400 group-hover:text-blue-400 group-hover:-translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            <span class="text-[11px] font-medium">Paso Anterior</span>
+          </button>
+
+          <!-- Botón: Reproducción Automática -->
+          <button id="btnAutoPlay" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 border border-blue-400/40 text-white transition-all duration-150 group shadow-lg shadow-blue-600/25 focus:outline-none focus:ring-2 focus:ring-blue-400/50">
+            <svg id="playIconSvg" class="w-4 h-4 mb-0.5 text-white group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+            </svg>
+            <span id="autoPlayLabel" class="text-[11px] font-semibold">Auto Play</span>
+          </button>
+
+          <!-- Botón: Siguiente Paso -->
+          <button id="btnNextStep" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 text-slate-200 transition-all duration-150 group shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+            <svg class="w-4 h-4 mb-0.5 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+            <span class="text-[11px] font-medium">Siguiente Paso</span>
+          </button>
+
+          <!-- Botón: Reiniciar -->
+          <button id="btnReset" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/40 active:bg-slate-900 border border-slate-700 hover:border-rose-500/40 text-slate-200 hover:text-rose-300 transition-all duration-150 group shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40">
+            <svg class="w-4 h-4 mb-0.5 text-slate-400 group-hover:text-rose-400 group-hover:rotate-180 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span class="text-[11px] font-medium">Reiniciar</span>
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 2. PANEL DERECHO: EL ÁRBOL DE DECISIÓN     -->
+    <!-- ========================================== -->
+    <section class="flex-1 flex flex-col relative overflow-hidden bg-slate-950">
+      
+      <!-- Panel Header & Bar -->
+      <div class="h-14 shrink-0 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 flex items-center justify-between z-10">
+        <div class="flex items-center space-x-2.5">
+          <span class="text-indigo-400">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+            </svg>
+          </span>
+          <h2 class="text-sm font-bold text-slate-100">Árbol de Decisión</h2>
+          <span class="text-xs text-slate-400 border-l border-slate-700 pl-2.5 hidden sm:inline" id="treeExplorationSummary">
+            Cargando árbol...
+          </span>
+        </div>
+
+        <!-- Tree Zoom & View Controls -->
+        <div class="flex items-center space-x-2">
+          <div class="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+            <button id="zoomOutBtn" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded" title="Reducir zoom">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+              </svg>
+            </button>
+            <span class="px-2 text-[11px] font-mono text-slate-400" id="zoomLevel">100%</span>
+            <button id="zoomInBtn" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded" title="Aumentar zoom">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+          <button id="resetViewBtn" class="px-2.5 py-1 text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition" title="Restablecer posición y zoom">
+            Ajustar
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN CANVAS / SVG WORKSPACE AREA (Con Drag & Drop Pan y Scroll Zoom) -->
+      <div id="treeViewport" class="flex-1 relative overflow-hidden tree-grid-bg flex items-center justify-center p-0 cursor-grab select-none">
+
+        <!-- ============================================== -->
+        <!-- FLOATING STATUS PANEL: ALFA (α) Y BETA (β)     -->
+        <!-- ============================================== -->
+        <div class="absolute top-3 right-3 z-20 pointer-events-none">
+          <div id="alphaBetaFloatingCard" class="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 shadow-2xl w-60 pointer-events-auto">
+            
+            <div class="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-800 text-xs">
+              <span class="font-semibold text-slate-300 flex items-center gap-1">
+                <svg class="w-3 h-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Poda Alfa-Beta
+              </span>
+              <span id="pruningStatusIndicator" class="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 font-semibold">
+                ACTIVO
+              </span>
+            </div>
+
+            <!-- Parameters Grid -->
+            <div class="grid grid-cols-2 gap-2 text-center">
+              
+              <!-- Alfa (α) -->
+              <div class="bg-slate-950/80 border border-blue-500/30 rounded-lg p-2 transition-colors" id="alphaBox">
+                <div class="flex items-center justify-center space-x-1 text-[11px] text-blue-400 font-semibold mb-0.5">
+                  <span>Alfa (α)</span>
+                  <span class="text-[9px] text-slate-500">(MAX)</span>
+                </div>
+                <div id="alphaValueDisplay" class="font-mono text-sm font-bold text-blue-300">
+                  -∞
+                </div>
+              </div>
+
+              <!-- Beta (β) -->
+              <div class="bg-slate-950/80 border border-rose-500/30 rounded-lg p-2 transition-colors" id="betaBox">
+                <div class="flex items-center justify-center space-x-1 text-[11px] text-rose-400 font-semibold mb-0.5">
+                  <span>Beta (β)</span>
+                  <span class="text-[9px] text-slate-500">(MIN)</span>
+                </div>
+                <div id="betaValueDisplay" class="font-mono text-sm font-bold text-rose-300">
+                  +∞
+                </div>
+              </div>
+            </div>
+
+            <!-- Pruning condition note -->
+            <div id="pruningRuleBadge" class="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Condición de corte:</span>
+              <code class="font-mono text-amber-300 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded" id="pruneMathCode">α ≥ β</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLOATING LEGEND (Esquina Inferior Izquierda) -->
+        <div class="absolute bottom-3 left-3 z-20 hidden md:block pointer-events-none">
+          <div class="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-xl p-2.5 shadow-lg text-[11px] space-y-1 pointer-events-auto">
+            <span class="text-[10px] font-semibold text-slate-400 block mb-0.5">Convención:</span>
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              <span class="text-slate-300 text-[10px]">Nodo MAX (Maximiza)</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+              <span class="text-slate-300 text-[10px]">Nodo MIN (Minimiza)</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full border-2 border-amber-400 bg-slate-900"></span>
+              <span class="text-amber-300 text-[10px] font-semibold">Nodo Activo</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-rose-400 font-bold text-xs">❌</span>
+              <span class="text-rose-300 text-[10px] font-semibold">Rama Podada (α ≥ β)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLOATING INTERACTION HINT (Abajo Centro) -->
+        <div class="absolute bottom-3 right-3 z-10 hidden sm:flex items-center gap-2 bg-slate-900/80 border border-slate-800 text-[10.5px] text-slate-400 px-3 py-1 rounded-full pointer-events-none shadow-md">
+          <span>🖐️ Arrastra con el mouse para mover</span>
+          <span>•</span>
+          <span>🖱️ Rueda para Zoom</span>
+        </div>
+
+        <!-- DYNAMIC SVG TREE CONTAINER -->
+        <div id="treeContainer" class="w-full h-full flex items-center justify-center select-none overflow-hidden">
+          <svg id="treeSvg" class="w-full h-full max-h-full transition-transform duration-75 select-none" viewBox="0 0 1200 560" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <!-- Arrow marker for branches -->
+              <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b" />
+              </marker>
+              
+              <!-- Gradient MAX -->
+              <linearGradient id="gradMax" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3b82f6" />
+                <stop offset="100%" stop-color="#1d4ed8" />
+              </linearGradient>
+
+              <!-- Gradient MIN -->
+              <linearGradient id="gradMin" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ef4444" />
+                <stop offset="100%" stop-color="#b91c1c" />
+              </linearGradient>
+
+              <!-- Filters for glows -->
+              <filter id="activeGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#facc15" flood-opacity="0.9" />
+              </filter>
+            </defs>
+
+            <!-- Layer 1: Edges / Branches -->
+            <g id="svgEdgesLayer"></g>
+
+            <!-- Layer 2: Pruning Highlights and ❌ Mark -->
+            <g id="svgPruningLayer"></g>
+
+            <!-- Layer 3: Nodes -->
+            <g id="svgNodesLayer"></g>
+          </svg>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- JAVASCRIPT: MOTOR NIMANALYZER E INTEGRACION PASO A PASO  -->
+  <!-- ======================================================== -->
+  <script>
+    // ==========================================================
+    // 1. CLASE NIMANALYZER (Lógica Algorítmica Pura - Fallback si no carga nimAnalyzer.js)
+    // ==========================================================
+    if (typeof window.NimAnalyzer === 'undefined') {
+      window.NimAnalyzer = class NimAnalyzer {
+        constructor(initialState = [1, 3]) {
+        this.initialState = [...initialState];
+        this.frames = [];
+        this.nodeCounter = 0;
+      }
+
+      isTerminal(state) {
+        return state.every(count => count === 0);
+      }
+
+      /**
+       * Calcula el string descriptivo de la acción realizada entre dos estados consecutivos
+       * basándose estrictamente en la diferencia de fichas por fila:
+       * - Fila 1: parentState[0] - childState[0]
+       * - Fila 2: parentState[1] - childState[1]
+       * 
+       * @param {number[]} parentState - Estado previo [f1, f2]
+       * @param {number[]} childState - Estado resultante [f1, f2]
+       * @returns {string} String formateado de la acción (ej. "F1 - 1", "F2 - 2", "F2 - 3")
+       */
+      static getActionString(parentState, childState) {
+        if (!parentState || !childState) return '';
+        const diffRow1 = parentState[0] - childState[0];
+        const diffRow2 = parentState[1] - childState[1];
+
+        if (diffRow1 > 0) {
+          return `F1 - ${diffRow1}`;
+        }
+        if (diffRow2 > 0) {
+          return `F2 - ${diffRow2}`;
+        }
+        return '';
+      }
+
+      getActionString(parentState, childState) {
+        return NimAnalyzer.getActionString(parentState, childState);
+      }
+
+      getLegalMoves(state) {
+        const moves = [];
+
+        // Fila 1 (índice 0)
+        for (let c = 1; c <= state[0]; c++) {
+          const resultingState = [state[0] - c, state[1]];
+          moves.push({
+            row: 1,
+            rowIndex: 0,
+            count: c,
+            action: `F1 - ${c}`,
+            resultingState
+          });
+        }
+
+        // Fila 2 (índice 1)
+        for (let c = 1; c <= state[1]; c++) {
+          const resultingState = [state[0], state[1] - c];
+          moves.push({
+            row: 2,
+            rowIndex: 1,
+            count: c,
+            action: `F2 - ${c}`,
+            resultingState
+          });
+        }
+
+        return moves;
+      }
+
+      analyze() {
+        this.frames = [];
+        this.nodeCounter = 0;
+
+        const rootResult = this.minimax(
+          this.initialState,
+          'MAX',
+          -Infinity,
+          Infinity,
+          null, // parentNodeID
+          null, // moveFromParent
+          0,    // depth
+          null  // parentState
+        );
+
+        return {
+          initialState: [...this.initialState],
+          rootValue: rootResult.value,
+          bestMove: rootResult.bestMove,
+          totalNodes: this.nodeCounter,
+          totalFrames: this.frames.length,
+          frames: this.frames
+        };
+      }
+
+      minimax(boardState, currentPlayer, alpha, beta, parentId, moveFromParent, depth, parentState = null) {
+        const isMax = currentPlayer === 'MAX';
+        const nodeId = `node_${++this.nodeCounter}`;
+        const actionFromParent = parentState ? NimAnalyzer.getActionString(parentState, boardState) : null;
+        
+        let currentValue = isMax ? -Infinity : Infinity;
+        let currentAlpha = alpha;
+        let currentBeta = beta;
+        let bestMove = null;
+
+        const enrichedMoveFromParent = moveFromParent ? {
+          ...moveFromParent,
+          action: actionFromParent || moveFromParent.action || `F${moveFromParent.row} - ${moveFromParent.count}`
+        } : null;
+
+        // 1. FRAME: VISITING
+        this.recordFrame({
+          nodeID: nodeId,
+          boardState: [...boardState],
+          currentPlayer,
+          actionType: 'visiting',
+          action: actionFromParent,
+          currentAlpha,
+          currentBeta,
+          currentValue,
+          prunedBranches: [],
+          depth,
+          parentId,
+          moveFromParent: enrichedMoveFromParent,
+          description: `Visitando nodo ${nodeId} con estado [${boardState}] en turno ${currentPlayer}`
+        });
+
+        // 2. TERMINAL NODE [0, 0]
+        if (this.isTerminal(boardState)) {
+          currentValue = isMax ? -1 : 1;
+
+          // FRAME: EVALUATING terminal
+          this.recordFrame({
+            nodeID: nodeId,
+            boardState: [...boardState],
+            currentPlayer,
+            actionType: 'evaluating',
+            action: actionFromParent,
+            currentAlpha,
+            currentBeta,
+            currentValue,
+            prunedBranches: [],
+            depth,
+            parentId,
+            moveFromParent: enrichedMoveFromParent,
+            isTerminal: true,
+            winner: currentValue === 1 ? 'MAX' : 'MIN',
+            description: `Estado terminal alcanzado [0, 0]. Gana ${currentValue === 1 ? 'MAX' : 'MIN'} (Utilidad = ${currentValue})`
+          });
+
+          // FRAME: BACKTRACKING from terminal
+          this.recordFrame({
+            nodeID: nodeId,
+            boardState: [...boardState],
+            currentPlayer,
+            actionType: 'backtracking',
+            action: actionFromParent,
+            currentAlpha,
+            currentBeta,
+            currentValue,
+            prunedBranches: [],
+            depth,
+            parentId,
+            moveFromParent: enrichedMoveFromParent,
+            isTerminal: true,
+            description: `Backtracking desde hoja terminal ${nodeId} retornando valor ${currentValue}`
+          });
+
+          return { value: currentValue, bestMove: null };
+        }
+
+        const legalMoves = this.getLegalMoves(boardState);
+        const nextPlayer = isMax ? 'MIN' : 'MAX';
+
+        for (let i = 0; i < legalMoves.length; i++) {
+          const move = legalMoves[i];
+          const moveAction = NimAnalyzer.getActionString(boardState, move.resultingState);
+          const childMovePayload = {
+            ...move,
+            action: moveAction
+          };
+
+          const childResult = this.minimax(
+            move.resultingState,
+            nextPlayer,
+            currentAlpha,
+            currentBeta,
+            nodeId,
+            childMovePayload,
+            depth + 1,
+            boardState
+          );
+
+          let updatedBestMove = false;
+          if (isMax) {
+            if (childResult.value > currentValue) {
+              currentValue = childResult.value;
+              bestMove = childMovePayload;
+              updatedBestMove = true;
+            }
+            currentAlpha = Math.max(currentAlpha, currentValue);
+          } else {
+            if (childResult.value < currentValue) {
+              currentValue = childResult.value;
+              bestMove = childMovePayload;
+              updatedBestMove = true;
+            }
+            currentBeta = Math.min(currentBeta, currentValue);
+          }
+
+          // FRAME: EVALUATING child response
+          this.recordFrame({
+            nodeID: nodeId,
+            boardState: [...boardState],
+            currentPlayer,
+            actionType: 'evaluating',
+            action: actionFromParent,
+            currentAlpha,
+            currentBeta,
+            currentValue,
+            prunedBranches: [],
+            depth,
+            parentId,
+            evaluatedMove: childMovePayload,
+            childReturnedValue: childResult.value,
+            updatedBestMove,
+            description: `${currentPlayer} evalúa jugada (${moveAction} -> [${move.resultingState}]) recibiendo ${childResult.value}. Mejor valor actual: ${currentValue}, α: ${currentAlpha}, β: ${currentBeta}`
+          });
+
+          // PODA ALFA-BETA: α >= β
+          if (currentAlpha >= currentBeta) {
+            const remainingMoves = legalMoves.slice(i + 1);
+
+            if (remainingMoves.length > 0) {
+              // FRAME: PRUNING
+              this.recordFrame({
+                nodeID: nodeId,
+                boardState: [...boardState],
+                currentPlayer,
+                actionType: 'pruning',
+                action: actionFromParent,
+                currentAlpha,
+                currentBeta,
+                currentValue,
+                prunedBranches: remainingMoves.map(m => {
+                  const prunedAction = NimAnalyzer.getActionString(boardState, m.resultingState);
+                  return {
+                    move: { row: m.row, count: m.count },
+                    action: prunedAction,
+                    resultingState: [...m.resultingState]
+                  };
+                }),
+                depth,
+                parentId,
+                cutoffCondition: `α (${this.formatVal(currentAlpha)}) ≥ β (${this.formatVal(currentBeta)})`,
+                description: `¡Poda Alfa-Beta en nodo ${nodeId}! Condición cumplida: α (${this.formatVal(currentAlpha)}) ≥ β (${this.formatVal(currentBeta)}). Se podan ${remainingMoves.length} rama(s) restante(s).`
+              });
+              break;
+            }
+          }
+        }
+
+        // FRAME: BACKTRACKING to parent
+        this.recordFrame({
+          nodeID: nodeId,
+          boardState: [...boardState],
+          currentPlayer,
+          actionType: 'backtracking',
+          action: actionFromParent,
+          currentAlpha,
+          currentBeta,
+          currentValue,
+          prunedBranches: [],
+          depth,
+          parentId,
+          bestMove,
+          description: `Backtracking desde nodo ${nodeId}: ${currentPlayer} retorna mejor valor ${currentValue} a su predecesor.`
+        });
+
+        return { value: currentValue, bestMove };
+      }
+
+      formatVal(v) {
+        if (v === -Infinity) return '-∞';
+        if (v === Infinity) return '+∞';
+        return v > 0 ? `+${v}` : `${v}`;
+      }
+
+      recordFrame(frameData) {
+        this.frames.push({
+          frameIndex: this.frames.length,
+          ...frameData
+        });
+      }
+    };
+  }
+
+    // ==========================================================
+    // 2. GENERADOR DE EXPLICACIONES DIDÁCTICAS Y DETALLADAS
+    // ==========================================================
+    function formatBound(val) {
+      if (val === -Infinity) return '-∞';
+      if (val === Infinity) return '+∞';
+      return val > 0 ? `+${val}` : `${val}`;
+    }
+
+    function getDetailedExplanation(frame) {
+      const isMax = frame.currentPlayer === 'MAX';
+      const roleStr = isMax ? 'MAX (Jugador Azul • Busca MAXIMIZAR)' : 'MIN (Jugador Rojo • Busca MINIMIZAR)';
+      const [f1, f2] = frame.boardState;
+      const totalTokens = f1 + f2;
+
+      switch (frame.actionType) {
+        case 'visiting': {
+          if (frame.depth === 0) {
+            return {
+              phaseBadge: '1. INICIO DEL ALGORITMO (ESTADO RAÍZ)',
+              phaseColor: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+              headline: `Iniciando Minimax con Poda Alfa-Beta en el estado inicial [${f1}, ${f2}].`,
+              whatHappened: `Comienza la partida de Nim con ${f1} ficha en la Fila 1 y ${f2} fichas en la Fila 2. El primer turno corresponde a MAX.`,
+              reasoningTitle: 'Inicialización de Parámetros Minimax:',
+              reasoningIcon: '⚡',
+              reasoningBoxClass: 'bg-blue-950/20 border-blue-800/40',
+              whyDecision: `• Cota Alfa (α = -∞): MAX no tiene asegurada ninguna victoria aún.\n• Cota Beta (β = +∞): MIN tampoco ha asegurado un límite.\n• Siguiendo el orden de exploración estricto, MAX generará primero jugadas de la Fila 1 (retirar 1 ficha) y luego de la Fila 2 (retirar 1, 2 y 3 fichas).`,
+              nimImpact: `Mesa inicial: 4 fichas en juego. MAX explora en profundidad (DFS) hacia la izquierda.`
+            };
+          }
+          const move = frame.moveFromParent;
+          const moveDesc = move ? `Fila ${move.row} (-${move.count} ficha${move.count > 1 ? 's' : ''})` : 'jugada previa';
+          return {
+            phaseBadge: '2. EXPANSIÓN EN PROFUNDIDAD (DFS)',
+            phaseColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
+            headline: `Descendiendo al nodo ${frame.nodeID}: Tablero en [${f1}, ${f2}] (${frame.currentPlayer}).`,
+            whatHappened: `Se llega a esta posición tras la jugada de ${moveDesc}. El turno de juego le corresponde a ${roleStr}.`,
+            reasoningTitle: `Parámetros heredados para ${frame.currentPlayer}:`,
+            reasoningIcon: '🔍',
+            reasoningBoxClass: 'bg-indigo-950/20 border-indigo-800/40',
+            whyDecision: `• Cotas vigentes: α = ${formatBound(frame.currentAlpha)}, β = ${formatBound(frame.currentBeta)}.\n• ${frame.currentPlayer} inicia su mejor valor en ${isMax ? '-∞ (buscará el valor más alto de sus hijos)' : '+∞ (buscará el valor más bajo de sus hijos)'}.\n• Explorará sus opciones legales según el orden estricto de izquierda a derecha.`,
+            nimImpact: `Quedan ${totalTokens} ficha(s) en la mesa. El algoritmo profundiza hasta encontrar un estado terminal.`
+          };
+        }
+
+        case 'evaluating': {
+          if (frame.isTerminal) {
+            const winner = frame.currentValue === 1 ? 'MAX (+1)' : 'MIN (-1)';
+            const lastPlayer = isMax ? 'MIN' : 'MAX';
+            return {
+              phaseBadge: '3. HOJA TERMINAL ALCANZADA [0, 0]',
+              phaseColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+              headline: `¡Fin de la partida en esta rama! Victoria para ${winner}.`,
+              whatHappened: `El tablero quedó completamente vacío [0, 0]. Por la regla clásica de Nim ("Gana quien retira el último objeto"), el jugador que realizó la última jugada (${lastPlayer}) gana la partida.`,
+              reasoningTitle: 'Evaluación de la Función de Utilidad:',
+              reasoningIcon: '🏆',
+              reasoningBoxClass: 'bg-emerald-950/20 border-emerald-800/40',
+              whyDecision: `• Le tocaba mover a ${frame.currentPlayer}, pero al no haber fichas, no tiene movimientos legales posibles.\n• Utilidad asignada: ${frame.currentValue === 1 ? '+1 (victoria definitiva de MAX)' : '-1 (victoria definitiva de MIN)'}.\n• Este valor numérico se retornará de inmediato al nodo padre para actualizar sus cotas.`,
+              nimImpact: `Rama resuelta. Comienza la fase de retroceso (backtracking).`
+            };
+          }
+
+          const move = frame.evaluatedMove;
+          const returnedVal = frame.childReturnedValue;
+          const isBetter = frame.updatedBestMove;
+
+          if (isMax) {
+            return {
+              phaseBadge: '4. EVALUACIÓN Y MAXIMIZACIÓN',
+              phaseColor: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+              headline: `MAX procesa el resultado del hijo: Utilidad devuelta = ${returnedVal > 0 ? '+1' : returnedVal}.`,
+              whatHappened: `MAX evaluó la jugada (Fila ${move.row}, retirar ${move.count} ficha(s) -> [${move.resultingState}]). El subárbol explorado devolvió una utilidad de ${returnedVal > 0 ? '+1' : returnedVal}.`,
+              reasoningTitle: 'Cálculo de Decisión de MAX:',
+              reasoningIcon: '📈',
+              reasoningBoxClass: 'bg-blue-950/20 border-blue-800/40',
+              whyDecision: isBetter
+                ? `• ¡Nueva mejor opción para MAX! Como ${returnedVal} supera su mejor valor previo, MAX actualiza su valor a ${frame.currentValue}.\n• Se ajusta la cota Alfa: α = max(α, ${frame.currentValue}) = ${formatBound(frame.currentAlpha)}.\n• MAX ahora tiene garantizado al menos este valor.`
+                : `• No hay mejora: la jugada devolvió ${returnedVal}, que no supera la mejor opción que MAX ya tenía (${frame.currentValue}).\n• La cota Alfa se mantiene inalterada en α = ${formatBound(frame.currentAlpha)}.`,
+              nimImpact: `Estado de cotas en este nodo: α = ${formatBound(frame.currentAlpha)}, β = ${formatBound(frame.currentBeta)}.`
+            };
+          } else {
+            return {
+              phaseBadge: '4. EVALUACIÓN Y MINIMIZACIÓN',
+              phaseColor: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+              headline: `MIN procesa el resultado del hijo: Utilidad devuelta = ${returnedVal > 0 ? '+1' : returnedVal}.`,
+              whatHappened: `MIN evaluó la jugada (Fila ${move.row}, retirar ${move.count} ficha(s) -> [${move.resultingState}]). El subárbol explorado devolvió una utilidad de ${returnedVal > 0 ? '+1' : returnedVal}.`,
+              reasoningTitle: 'Cálculo de Decisión de MIN:',
+              reasoningIcon: '📉',
+              reasoningBoxClass: 'bg-rose-950/20 border-rose-800/40',
+              whyDecision: isBetter
+                ? `• ¡Mejora para MIN! Como MIN busca minimizar, el valor ${returnedVal} es más favorable. MIN actualiza su valor a ${frame.currentValue}.\n• Se ajusta la cota Beta: β = min(β, ${frame.currentValue}) = ${formatBound(frame.currentBeta)}.\n• MIN ahora puede limitar a MAX a no obtener más de ${formatBound(frame.currentBeta)}.`
+                : `• Sin mejora para MIN: el valor ${returnedVal} no es menor que su mejor opción actual (${frame.currentValue}).\n• La cota Beta se conserva en β = ${formatBound(frame.currentBeta)}.`,
+              nimImpact: `Estado de cotas en este nodo: α = ${formatBound(frame.currentAlpha)}, β = ${formatBound(frame.currentBeta)}.`
+            };
+          }
+        }
+
+        case 'pruning': {
+          const branchDetails = frame.prunedBranches.map(b => `Fila ${b.move.row} (-${b.move.count} ficha(s) hacia [${b.resultingState}])`).join(', ');
+
+          return {
+            phaseBadge: '✂️ 5. ¡PODA ALFA-BETA ACTIVADA (CORTE)!',
+            phaseColor: 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse font-bold',
+            headline: `Condición de corte cumplida: α (${formatBound(frame.currentAlpha)}) ≥ β (${formatBound(frame.currentBeta)}).`,
+            whatHappened: `En el nodo ${frame.nodeID} [${f1}, ${f2}], el jugador ${roleStr} detecta que Alfa alcanzó o superó a Beta. Se cancela de inmediato la exploración de: ${branchDetails}.`,
+            reasoningTitle: '¿Por qué se produce esta Poda? (Explicación Teórica):',
+            reasoningIcon: '✂️',
+            reasoningBoxClass: 'bg-rose-950/40 border-rose-600/60 shadow-lg shadow-rose-950/50',
+            whyDecision: `1. MIN en este nodo ya demostró que puede forzar un resultado de al menos β = ${formatBound(frame.currentBeta)} (o peor para MAX).\n2. Sin embargo, el ancestro MAX (en el nodo superior) ya tiene garantizado en otro camino alternativo un resultado de al menos α = ${formatBound(frame.currentAlpha)}.\n3. En consecuencia, MAX NUNCA elegirá la jugada que lleve a este nodo, pues sabe que MIN lo limitará a un valor inferior o igual a ${formatBound(frame.currentBeta)}.\n4. Seguir explorando las demás jugadas desde aquí (${branchDetails}) es un DESPERDICIO computacional: ninguna podrá alterar la decisión del ancestro.`,
+            nimImpact: `¡Ahorro de búsqueda! El algoritmo poda la rama roja marcada con ❌ y evita evaluar todo su subárbol.`
+          };
+        }
+
+        case 'backtracking': {
+          if (frame.isTerminal) {
+            return {
+              phaseBadge: '6. RETORNO DE VALOR TERMINAL',
+              phaseColor: 'bg-slate-700 text-slate-300 border-slate-600',
+              headline: `Propagando utilidad ${frame.currentValue > 0 ? '+1' : frame.currentValue} hacia el nodo padre.`,
+              whatHappened: `La hoja [0, 0] completó su reporte y transfiere el resultado al nodo predecesor.`,
+              reasoningTitle: 'Retroceso en el Árbol de Búsqueda:',
+              reasoningIcon: '↩️',
+              reasoningBoxClass: 'bg-slate-800/40 border-slate-700/60',
+              whyDecision: `El nodo padre utilizará este valor devuelto para comparar contra sus cotas actuales.`,
+              nimImpact: `El control de ejecución sube un nivel en el árbol.`
+            };
+          }
+          return {
+            phaseBadge: '6. PROPAGACIÓN Y CIERRE DE NODO',
+            phaseColor: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+            headline: `Nodo ${frame.nodeID} finaliza exploración. Retorna valor definitivo = ${frame.currentValue > 0 ? '+1' : frame.currentValue}.`,
+            whatHappened: `El jugador ${roleStr} ya exploró todas sus jugadas legales (o las restantes fueron podadas).`,
+            reasoningTitle: 'Consolidación Minimax:',
+            reasoningIcon: '📦',
+            reasoningBoxClass: 'bg-amber-950/20 border-amber-800/40',
+            whyDecision: `• Valor óptimo elegido por ${frame.currentPlayer}: ${frame.currentValue > 0 ? '+1' : frame.currentValue}.\n• Este resultado representa la mejor respuesta racional ante un juego perfecto del adversario.\n• Se transfiere al nodo padre para continuar la propagación hacia la raíz.`,
+            nimImpact: frame.depth === 0
+              ? `¡Análisis completado! La raíz concluye que con juego perfecto, MAX GANA (+1) jugando Fila 2 (-2 fichas -> [1, 1]).`
+              : `El subárbol bajo este nodo queda completamente resuelto.`
+          };
+        }
+      }
+    }
+
+    // ==========================================================
+    // 3. GENERADOR DE DISEÑO GEOMÉTRICO DEL ÁRBOL (LAYOUT SVG)
+    // ==========================================================
+    function calculateTreeLayout(frames) {
+      const nodes = new Map();
+
+      // Recolectar todos los nodos visitados
+      frames.forEach(f => {
+        if (!nodes.has(f.nodeID)) {
+          nodes.set(f.nodeID, {
+            id: f.nodeID,
+            boardState: [...f.boardState],
+            player: f.currentPlayer,
+            depth: f.depth,
+            parentId: f.parentId,
+            moveFromParent: f.moveFromParent ? { ...f.moveFromParent } : null,
+            children: [],
+            isPruned: false
+          });
+        }
+      });
+
+      // Conectar hijos
+      for (const [id, node] of nodes.entries()) {
+        if (node.parentId && nodes.has(node.parentId)) {
+          nodes.get(node.parentId).children.push(id);
+        }
+      }
+
+      // Identificar ramas podadas y agregar stubs visuales
+      const pruningFrames = frames.filter(f => f.actionType === 'pruning');
+      const prunedStubs = [];
+      pruningFrames.forEach(pf => {
+        pf.prunedBranches.forEach((branch, bIdx) => {
+          const stubId = `pruned_${pf.nodeID}_${bIdx}`;
+          const stubNode = {
+            id: stubId,
+            boardState: [...branch.resultingState],
+            player: pf.currentPlayer === 'MAX' ? 'MIN' : 'MAX',
+            depth: pf.depth + 1,
+            parentId: pf.nodeID,
+            moveFromParent: branch ? { ...branch } : null,
+            children: [],
+            isPruned: true,
+            pruningFrameIndex: pf.frameIndex
+          };
+          nodes.set(stubId, stubNode);
+          nodes.get(pf.nodeID).children.push(stubId);
+          prunedStubs.push(stubNode);
+        });
+      });
+
+      // Cálculo de coordenadas X por profundidad
+      function assignX(nodeId, leftBound) {
+        const node = nodes.get(nodeId);
+        if (node.children.length === 0) {
+          node.xUnit = leftBound;
+          return leftBound + 1;
+        }
+        let currentX = leftBound;
+        for (const childId of node.children) {
+          currentX = assignX(childId, currentX);
+        }
+        const firstChild = nodes.get(node.children[0]);
+        const lastChild = nodes.get(node.children[node.children.length - 1]);
+        node.xUnit = (firstChild.xUnit + lastChild.xUnit) / 2;
+        return currentX;
+      }
+
+      const rootId = frames[0].nodeID;
+      const totalUnits = assignX(rootId, 0);
+
+      const spacingX = 92;
+      const spacingY = 104;
+      const offsetX = 75;
+      const offsetY = 52;
+
+      const positions = {};
+      // IMPORTANTE: Asignar cx y cy directamente sobre cada objeto node para que tanto
+      // positions[id] como prunedStubs contengan las coordenadas exactas calculadas (sin undefined/NaN)
+      for (const [id, node] of nodes.entries()) {
+        node.cx = offsetX + node.xUnit * spacingX;
+        node.cy = offsetY + node.depth * spacingY;
+        positions[id] = node;
+      }
+
+      const svgWidth = offsetX * 2 + (totalUnits - 1) * spacingX + 40;
+      const svgHeight = offsetY * 2 + 4 * spacingY + 50;
+
+      return {
+        nodesMap: positions,
+        prunedStubs,
+        totalUnits,
+        svgWidth: Math.max(1180, svgWidth),
+        svgHeight: Math.max(540, svgHeight)
+      };
+    }
+
+    // ==========================================================
+    // 4. ESTADO GLOBAL Y VARIABLES DEL SIMULADOR
+    // ==========================================================
+    let currentStep = 0;
+    let frames = [];
+    let treeLayout = null;
+    let isAutoPlaying = false;
+    let autoPlayInterval = null;
+
+    // Variables de Pan & Zoom Interactivo
+    let currentZoom = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    // Elementos DOM del Tablero
+    const boardStateBadge = document.getElementById('boardStateBadge');
+    const turnIndicatorCard = document.getElementById('turnIndicatorCard');
+    const turnIconContainer = document.getElementById('turnIconContainer');
+    const turnIcon = document.getElementById('turnIcon');
+    const turnLabel = document.getElementById('turnLabel');
+    const turnPulseDot = document.getElementById('turnPulseDot');
+    const turnAccentBar = document.getElementById('turnAccentBar');
+    const actionTypeTag = document.getElementById('actionTypeTag');
+
+    const totalTokensCount = document.getElementById('totalTokensCount');
+    const pile1CountBadge = document.getElementById('pile-1-count-badge');
+    const pile2CountBadge = document.getElementById('pile-2-count-badge');
+    const pile1Container = document.getElementById('pile-1-container');
+    const pile2Container = document.getElementById('pile-2-container');
+
+    // Elementos del Panel Didáctico Detallado
+    const explanationPhaseBadge = document.getElementById('explanationPhaseBadge');
+    const explanationStepTag = document.getElementById('explanationStepTag');
+    const explanationHeadline = document.getElementById('explanationHeadline');
+    const explanationWhatHappened = document.getElementById('explanationWhatHappened');
+    const explanationReasoningBox = document.getElementById('explanationReasoningBox');
+    const explanationReasoningIcon = document.getElementById('explanationReasoningIcon');
+    const explanationReasoningTitle = document.getElementById('explanationReasoningTitle');
+    const explanationWhyDecision = document.getElementById('explanationWhyDecision');
+    const explanationNimImpact = document.getElementById('explanationNimImpact');
+
+    // Elementos de Control
+    const stepCounterBadge = document.getElementById('stepCounterBadge');
+    const stepProgressBar = document.getElementById('stepProgressBar');
+    const btnPrevStep = document.getElementById('btnPrevStep');
+    const btnNextStep = document.getElementById('btnNextStep');
+    const btnAutoPlay = document.getElementById('btnAutoPlay');
+    const autoPlayLabel = document.getElementById('autoPlayLabel');
+    const playIconSvg = document.getElementById('playIconSvg');
+    const btnReset = document.getElementById('btnReset');
+
+    // Elementos del Panel Alfa/Beta
+    const alphaValueDisplay = document.getElementById('alphaValueDisplay');
+    const betaValueDisplay = document.getElementById('betaValueDisplay');
+    const alphaBox = document.getElementById('alphaBox');
+    const betaBox = document.getElementById('betaBox');
+    const pruningStatusIndicator = document.getElementById('pruningStatusIndicator');
+    const pruningRuleBadge = document.getElementById('pruningRuleBadge');
+    const pruneMathCode = document.getElementById('pruneMathCode');
+
+    // Elementos SVG
+    const treeViewport = document.getElementById('treeViewport');
+    const treeSvg = document.getElementById('treeSvg');
+    const svgEdgesLayer = document.getElementById('svgEdgesLayer');
+    const svgPruningLayer = document.getElementById('svgPruningLayer');
+    const svgNodesLayer = document.getElementById('svgNodesLayer');
+    const treeExplorationSummary = document.getElementById('treeExplorationSummary');
+
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const resetViewBtn = document.getElementById('resetViewBtn');
+    const zoomLevel = document.getElementById('zoomLevel');
+
+    // ==========================================================
+    // 5. INICIALIZACIÓN
+    // ==========================================================
+    function initSimulator() {
+      const analyzer = new (window.NimAnalyzer || NimAnalyzer)([1, 3]);
+      const analysisResult = analyzer.analyze();
+      frames = analysisResult.frames;
+
+      // Calcular geometría de árbol
+      treeLayout = calculateTreeLayout(frames);
+      treeSvg.setAttribute('viewBox', `0 0 ${treeLayout.svgWidth} ${treeLayout.svgHeight}`);
+
+      currentStep = 0;
+      stepProgressBar.max = frames.length - 1;
+      stepProgressBar.value = 0;
+
+      treeExplorationSummary.textContent = `${analysisResult.totalNodes} nodos • ${frames.length} pasos`;
+
+      // Inicializar Pan & Zoom
+      panX = 0;
+      panY = 0;
+      currentZoom = 1;
+      applyTransform();
+
+      renderStep(currentStep);
+    }
+
+    // ==========================================================
+    // 6. RENDERIZADO DEL PASO
+    // ==========================================================
+    function renderStep(stepIndex) {
+      if (stepIndex < 0 || stepIndex >= frames.length) return;
+
+      const frame = frames[stepIndex];
+      const isMax = frame.currentPlayer === 'MAX';
+
+      // --------------------------------------------------------
+      // A. TABLERO FÍSICO
+      // --------------------------------------------------------
+      const [f1, f2] = frame.boardState;
+      boardStateBadge.textContent = `Estado: [${f1}, ${f2}]`;
+      totalTokensCount.textContent = `${f1 + f2}`;
+      pile1CountBadge.textContent = `${f1} obj`;
+      pile2CountBadge.textContent = `${f2} obj`;
+
+      // Fila 1
+      pile1Container.innerHTML = '';
+      if (f1 === 0) {
+        pile1Container.innerHTML = '<span class="text-[10px] text-slate-500 italic">Vacía</span>';
+      } else {
+        for (let i = 1; i <= f1; i++) {
+          const token = document.createElement('div');
+          token.className = "flex flex-col items-center";
+          token.innerHTML = `
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 border border-cyan-200/50 token-glow flex items-center justify-center shadow-md">
+              <svg class="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <span class="text-[9px] font-mono text-slate-400 mt-0.5">#${i}</span>
+          `;
+          pile1Container.appendChild(token);
+        }
+      }
+
+      // Fila 2
+      pile2Container.innerHTML = '';
+      if (f2 === 0) {
+        pile2Container.innerHTML = '<span class="text-[10px] text-slate-500 italic">Vacía</span>';
+      } else {
+        for (let i = 1; i <= f2; i++) {
+          const token = document.createElement('div');
+          token.className = "flex flex-col items-center";
+          token.innerHTML = `
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 via-purple-500 to-pink-600 border border-indigo-200/50 token-pink-glow flex items-center justify-center shadow-md">
+              <svg class="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <span class="text-[9px] font-mono text-slate-400 mt-0.5">#${i}</span>
+          `;
+          pile2Container.appendChild(token);
+        }
+      }
+
+      // Indicador de Turno
+      if (isMax) {
+        turnIndicatorCard.className = "relative overflow-hidden rounded-xl border border-blue-500/40 bg-gradient-to-r from-blue-950/40 via-slate-900 to-slate-900 p-3.5 transition-all duration-300 glow-blue";
+        turnIconContainer.className = "w-9 h-9 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0";
+        turnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />';
+        turnLabel.className = "text-sm font-bold text-blue-400 tracking-wide flex items-center gap-1.5 truncate";
+        turnLabel.innerHTML = 'Turno: MAX (Color Azul) <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>';
+        turnAccentBar.className = "absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500";
+      } else {
+        turnIndicatorCard.className = "relative overflow-hidden rounded-xl border border-rose-500/40 bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 p-3.5 transition-all duration-300 glow-red";
+        turnIconContainer.className = "w-9 h-9 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0";
+        turnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3" />';
+        turnLabel.className = "text-sm font-bold text-rose-400 tracking-wide flex items-center gap-1.5 truncate";
+        turnLabel.innerHTML = 'Turno: MIN (Color Rojo) <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>';
+        turnAccentBar.className = "absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-pink-500";
+      }
+
+      // Tipo de Acción Badge
+      const actionLabels = {
+        visiting: { text: 'VISITANDO', color: 'bg-blue-950 text-blue-400 border-blue-800/60' },
+        evaluating: { text: 'EVALUANDO', color: 'bg-indigo-950 text-indigo-400 border-indigo-800/60' },
+        pruning: { text: '✂️ PODA ALFA-BETA', color: 'bg-rose-950 text-rose-400 border-rose-800/60 animate-pulse' },
+        backtracking: { text: '↩️ RETORNANDO', color: 'bg-amber-950 text-amber-400 border-amber-800/60' }
+      };
+      const act = actionLabels[frame.actionType] || actionLabels.visiting;
+      actionTypeTag.className = `text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${act.color}`;
+      actionTypeTag.textContent = act.text;
+
+      // --------------------------------------------------------
+      // B. ACTUALIZACIÓN DEL PANEL DIDÁCTICO DETALLADO
+      // --------------------------------------------------------
+      const exp = getDetailedExplanation(frame);
+      explanationPhaseBadge.className = `text-[10px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-full border ${exp.phaseColor}`;
+      explanationPhaseBadge.textContent = exp.phaseBadge;
+      explanationStepTag.textContent = `Paso ${stepIndex + 1} / ${frames.length}`;
+      explanationHeadline.textContent = exp.headline;
+      explanationWhatHappened.textContent = exp.whatHappened;
+
+      explanationReasoningTitle.textContent = exp.reasoningTitle;
+      explanationReasoningIcon.textContent = exp.reasoningIcon;
+      explanationReasoningBox.className = `mb-2.5 text-[11px] leading-relaxed text-slate-300 p-2.5 rounded-lg border transition-colors ${exp.reasoningBoxClass}`;
+      explanationWhyDecision.textContent = exp.whyDecision;
+
+      explanationNimImpact.textContent = exp.nimImpact;
+
+      // Actualizar contadores
+      stepCounterBadge.textContent = `Paso: ${stepIndex + 1} / ${frames.length}`;
+      stepProgressBar.value = stepIndex;
+
+      // --------------------------------------------------------
+      // C. PARÁMETROS ALFA Y BETA
+      // --------------------------------------------------------
+      alphaValueDisplay.textContent = formatBound(frame.currentAlpha);
+      betaValueDisplay.textContent = formatBound(frame.currentBeta);
+
+      if (frame.actionType === 'pruning') {
+        pruningStatusIndicator.textContent = "✂️ CORTE ACTIVADO";
+        pruningStatusIndicator.className = "text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-rose-900 text-rose-200 border border-rose-600 animate-pulse font-bold";
+        pruneMathCode.className = "font-mono text-rose-300 font-bold bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/40";
+        pruningRuleBadge.classList.add('text-rose-300');
+        alphaBox.classList.add('border-rose-500');
+        betaBox.classList.add('border-rose-500');
+      } else {
+        pruningStatusIndicator.textContent = "ACTIVO";
+        pruningStatusIndicator.className = "text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 font-semibold";
+        pruneMathCode.className = "font-mono text-amber-300 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded";
+        pruningRuleBadge.classList.remove('text-rose-300');
+        alphaBox.classList.remove('border-rose-500');
+        betaBox.classList.remove('border-rose-500');
+      }
+
+      // --------------------------------------------------------
+      // D. RENDERIZADO DEL ÁRBOL SVG DINÁMICO
+      // --------------------------------------------------------
+      renderSvgTree(stepIndex);
+    }
+
+    // ==========================================================
+    // 7. RENDERIZADO ROBUSTO DEL ÁRBOL SVG
+    // ==========================================================
+    function renderSvgTree(stepIndex) {
+      const currentFrame = frames[stepIndex];
+      const activeNodeId = currentFrame.nodeID;
+
+      const visitedNodesSet = new Set();
+      const nodeBacktrackValues = new Map();
+
+      for (let i = 0; i <= stepIndex; i++) {
+        const f = frames[i];
+        visitedNodesSet.add(f.nodeID);
+        if (f.actionType === 'backtracking') {
+          nodeBacktrackValues.set(f.nodeID, f.currentValue);
+        }
+      }
+
+      const pruningOccurred = frames.slice(0, stepIndex + 1).some(f => f.actionType === 'pruning');
+      const isPruningExactFrame = currentFrame.actionType === 'pruning';
+
+      svgEdgesLayer.innerHTML = '';
+      svgPruningLayer.innerHTML = '';
+      svgNodesLayer.innerHTML = '';
+
+      const { nodesMap, prunedStubs } = treeLayout;
+
+      // --------------------------------------------------------
+      // DIBUJAR ARISTAS (RAMAS)
+      // --------------------------------------------------------
+      for (const [id, node] of Object.entries(nodesMap)) {
+        if (node.isPruned) continue;
+
+        if (visitedNodesSet.has(id) && node.parentId && visitedNodesSet.has(node.parentId)) {
+          const parent = nodesMap[node.parentId];
+          const isEdgeToActive = (id === activeNodeId && currentFrame.parentId === node.parentId);
+
+          const pathD = `M ${parent.cx} ${parent.cy + 19} C ${parent.cx} ${(parent.cy + node.cy) / 2}, ${node.cx} ${(parent.cy + node.cy) / 2}, ${node.cx} ${node.cy - 19}`;
+
+          const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          edge.setAttribute('d', pathD);
+          edge.setAttribute('fill', 'none');
+          edge.setAttribute('stroke', isEdgeToActive ? '#facc15' : '#475569');
+          edge.setAttribute('stroke-width', isEdgeToActive ? '2.5' : '1.8');
+          edge.setAttribute('stroke-linecap', 'round');
+          edge.setAttribute('marker-end', 'url(#arrow)');
+          svgEdgesLayer.appendChild(edge);
+
+          // Etiqueta de la jugada calculada DETERMINÍSTICAMENTE a partir de la diferencia de estados
+          const moveText = (window.NimAnalyzer || NimAnalyzer).getActionString(parent.boardState, node.boardState);
+          if (moveText) {
+            const mx = (parent.cx * 0.4 + node.cx * 0.6);
+            const my = (parent.cy + node.cy) / 2 - 4;
+
+            const badgeBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            badgeBg.setAttribute('x', `${mx - 18}`);
+            badgeBg.setAttribute('y', `${my - 7}`);
+            badgeBg.setAttribute('width', '36');
+            badgeBg.setAttribute('height', '14');
+            badgeBg.setAttribute('rx', '3');
+            badgeBg.setAttribute('fill', '#090d16');
+            badgeBg.setAttribute('stroke', isEdgeToActive ? '#eab308' : '#334155');
+            badgeBg.setAttribute('stroke-width', '1');
+            svgEdgesLayer.appendChild(badgeBg);
+
+            const textElem = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            textElem.setAttribute('x', `${mx}`);
+            textElem.setAttribute('y', `${my + 3}`);
+            textElem.setAttribute('text-anchor', 'middle');
+            textElem.setAttribute('font-family', 'monospace');
+            textElem.setAttribute('font-size', '8');
+            textElem.setAttribute('font-weight', 'bold');
+            textElem.setAttribute('fill', isEdgeToActive ? '#fef08a' : '#94a3b8');
+            textElem.textContent = moveText;
+            svgEdgesLayer.appendChild(textElem);
+          }
+        }
+      }
+
+      // --------------------------------------------------------
+      // DIBUJAR PODA ALFA-BETA (RAMA Y ❌ ROJA FIJA Y ESTABLE)
+      // --------------------------------------------------------
+      if (pruningOccurred) {
+        prunedStubs.forEach(stub => {
+          if (stepIndex >= stub.pruningFrameIndex) {
+            const parent = nodesMap[stub.parentId];
+            // Asegurar que stub.cx y stub.cy sean válidos
+            const stubX = (stub.cx !== undefined && !isNaN(stub.cx)) ? stub.cx : (nodesMap[stub.id] ? nodesMap[stub.id].cx : 811);
+            const stubY = (stub.cy !== undefined && !isNaN(stub.cy)) ? stub.cy : (nodesMap[stub.id] ? nodesMap[stub.id].cy : 260);
+
+            if (parent) {
+              // 1. Línea discontinua roja hacia el nodo podado
+              const prunePathD = `M ${parent.cx} ${parent.cy + 19} C ${parent.cx} ${(parent.cy + stubY) / 2}, ${stubX} ${(parent.cy + stubY) / 2}, ${stubX} ${stubY - 20}`;
+              
+              const pruneEdge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              pruneEdge.setAttribute('d', prunePathD);
+              pruneEdge.setAttribute('fill', 'none');
+              pruneEdge.setAttribute('stroke', '#ef4444');
+              pruneEdge.setAttribute('stroke-width', '2.5');
+              pruneEdge.setAttribute('stroke-dasharray', '5,4');
+              svgPruningLayer.appendChild(pruneEdge);
+
+              // 2. Coordenada central exacta sobre la rama
+              const midX = (parent.cx + stubX) / 2;
+              const midY = (parent.cy + stubY) / 2;
+
+              // 3. Grupo para la ❌ y el recuadro
+              const xGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+              if (isPruningExactFrame) {
+                xGroup.setAttribute('class', 'pruning-badge-active');
+              }
+
+              // Círculo rojo central para la ❌
+              const xBgCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+              xBgCircle.setAttribute('cx', `${midX}`);
+              xBgCircle.setAttribute('cy', `${midY}`);
+              xBgCircle.setAttribute('r', '16');
+              xBgCircle.setAttribute('fill', '#7f1d1d');
+              xBgCircle.setAttribute('stroke', '#ef4444');
+              xBgCircle.setAttribute('stroke-width', '2.5');
+              xGroup.appendChild(xBgCircle);
+
+              // Trazo 1 de la ❌
+              const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+              line1.setAttribute('x1', `${midX - 7}`);
+              line1.setAttribute('y1', `${midY - 7}`);
+              line1.setAttribute('x2', `${midX + 7}`);
+              line1.setAttribute('y2', `${midY + 7}`);
+              line1.setAttribute('stroke', '#ffffff');
+              line1.setAttribute('stroke-width', '3');
+              line1.setAttribute('stroke-linecap', 'round');
+              xGroup.appendChild(line1);
+
+              // Trazo 2 de la ❌
+              const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+              line2.setAttribute('x1', `${midX + 7}`);
+              line2.setAttribute('y1', `${midY - 7}`);
+              line2.setAttribute('x2', `${midX - 7}`);
+              line2.setAttribute('y2', `${midY + 7}`);
+              line2.setAttribute('stroke', '#ffffff');
+              line2.setAttribute('stroke-width', '3');
+              line2.setAttribute('stroke-linecap', 'round');
+              xGroup.appendChild(line2);
+
+              // Recuadro superior: "✂️ RAMA PODADA"
+              const rectTop = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+              rectTop.setAttribute('x', `${midX - 52}`);
+              rectTop.setAttribute('y', `${midY - 32}`);
+              rectTop.setAttribute('width', '104');
+              rectTop.setAttribute('height', '18');
+              rectTop.setAttribute('rx', '4');
+              rectTop.setAttribute('fill', '#090d16');
+              rectTop.setAttribute('stroke', '#ef4444');
+              rectTop.setAttribute('stroke-width', '1.5');
+              xGroup.appendChild(rectTop);
+
+              const textTop = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              textTop.setAttribute('x', `${midX}`);
+              textTop.setAttribute('y', `${midY - 20}`);
+              textTop.setAttribute('text-anchor', 'middle');
+              textTop.setAttribute('font-family', 'Inter, sans-serif');
+              textTop.setAttribute('font-size', '9');
+              textTop.setAttribute('font-weight', 'bold');
+              textTop.setAttribute('fill', '#fca5a5');
+              textTop.textContent = '✂️ RAMA PODADA';
+              xGroup.appendChild(textTop);
+
+              // Recuadro inferior con la condición: "α (-1) ≥ β (-1)"
+              const rectBottom = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+              rectBottom.setAttribute('x', `${midX - 44}`);
+              rectBottom.setAttribute('y', `${midY + 22}`);
+              rectBottom.setAttribute('width', '88');
+              rectBottom.setAttribute('height', '16');
+              rectBottom.setAttribute('rx', '4');
+              rectBottom.setAttribute('fill', '#090d16');
+              rectBottom.setAttribute('stroke', '#ef4444');
+              rectBottom.setAttribute('stroke-width', '1');
+              xGroup.appendChild(rectBottom);
+
+              const textBottom = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              textBottom.setAttribute('x', `${midX}`);
+              textBottom.setAttribute('y', `${midY + 33.5}`);
+              textBottom.setAttribute('text-anchor', 'middle');
+              textBottom.setAttribute('font-family', 'JetBrains Mono, monospace');
+              textBottom.setAttribute('font-size', '8.5');
+              textBottom.setAttribute('font-weight', 'bold');
+              textBottom.setAttribute('fill', '#f87171');
+              textBottom.textContent = 'α (-1) ≥ β (-1)';
+              xGroup.appendChild(textBottom);
+
+              svgPruningLayer.appendChild(xGroup);
+
+              // 4. Nodo fantasma punteado de destino [1, 0] (en su lugar exacto)
+              const stubGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+              const stubCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+              stubCircle.setAttribute('cx', `${stubX}`);
+              stubCircle.setAttribute('cy', `${stubY}`);
+              stubCircle.setAttribute('r', '20');
+              stubCircle.setAttribute('fill', '#18181b');
+              stubCircle.setAttribute('stroke', '#ef4444');
+              stubCircle.setAttribute('stroke-dasharray', '4,3');
+              stubCircle.setAttribute('stroke-width', '1.5');
+              stubGroup.appendChild(stubCircle);
+
+              const stubText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              stubText.setAttribute('x', `${stubX}`);
+              stubText.setAttribute('y', `${stubY - 1}`);
+              stubText.setAttribute('text-anchor', 'middle');
+              stubText.setAttribute('font-family', 'Inter, sans-serif');
+              stubText.setAttribute('font-size', '9.5');
+              stubText.setAttribute('font-weight', 'bold');
+              stubText.setAttribute('fill', '#fca5a5');
+              stubText.textContent = `[${stub.boardState}]`;
+              stubGroup.appendChild(stubText);
+
+              const stubActionText = (window.NimAnalyzer || NimAnalyzer).getActionString(parent.boardState, stub.boardState) || 'F2 - 2';
+              const stubMoveText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              stubMoveText.setAttribute('x', `${stubX}`);
+              stubMoveText.setAttribute('y', `${stubY + 9.5}`);
+              stubMoveText.setAttribute('text-anchor', 'middle');
+              stubMoveText.setAttribute('font-family', 'Inter, sans-serif');
+              stubMoveText.setAttribute('font-size', '7');
+              stubMoveText.setAttribute('font-weight', '600');
+              stubMoveText.setAttribute('fill', '#94a3b8');
+              stubMoveText.textContent = stubActionText;
+              stubGroup.appendChild(stubMoveText);
+
+              const stubDiscardBadge = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              stubDiscardBadge.setAttribute('x', `${stubX}`);
+              stubDiscardBadge.setAttribute('y', `${stubY + 28}`);
+              stubDiscardBadge.setAttribute('text-anchor', 'middle');
+              stubDiscardBadge.setAttribute('font-family', 'Inter, sans-serif');
+              stubDiscardBadge.setAttribute('font-size', '8');
+              stubDiscardBadge.setAttribute('font-weight', 'bold');
+              stubDiscardBadge.setAttribute('fill', '#f87171');
+              stubDiscardBadge.textContent = '(Descartado)';
+              stubGroup.appendChild(stubDiscardBadge);
+
+              svgPruningLayer.appendChild(stubGroup);
+            }
+          }
+        });
+      }
+
+      // --------------------------------------------------------
+      // DIBUJAR NODOS
+      // --------------------------------------------------------
+      for (const [id, node] of Object.entries(nodesMap)) {
+        if (node.isPruned) continue;
+
+        const isVisited = visitedNodesSet.has(id);
+        const isActive = (id === activeNodeId);
+        const hasEvaluatedValue = nodeBacktrackValues.has(id);
+        const evaluatedVal = nodeBacktrackValues.get(id);
+
+        const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        nodeGroup.setAttribute('id', `svg-${id}`);
+        nodeGroup.setAttribute('cursor', 'pointer');
+
+        if (!isVisited) {
+          nodeGroup.setAttribute('opacity', '0.12');
+          
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', `${node.cx}`);
+          circle.setAttribute('cy', `${node.cy}`);
+          circle.setAttribute('r', '18');
+          circle.setAttribute('fill', '#0f172a');
+          circle.setAttribute('stroke', '#475569');
+          circle.setAttribute('stroke-width', '1.5');
+          circle.setAttribute('stroke-dasharray', '3,3');
+          nodeGroup.appendChild(circle);
+
+          const textState = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          textState.setAttribute('x', `${node.cx}`);
+          textState.setAttribute('y', `${node.cy + 3}`);
+          textState.setAttribute('text-anchor', 'middle');
+          textState.setAttribute('font-family', 'Inter, sans-serif');
+          textState.setAttribute('font-size', '9');
+          textState.setAttribute('fill', '#64748b');
+          textState.textContent = `[${node.boardState}]`;
+          nodeGroup.appendChild(textState);
+
+          svgNodesLayer.appendChild(nodeGroup);
+          continue;
+        }
+
+        // ====================================================
+        // NODO VISITADO
+        // ====================================================
+        const isMaxNode = node.player === 'MAX';
+        const nodeRadius = 19;
+
+        // Resaltado de nodo activo
+        if (isActive) {
+          const activeOuterRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          activeOuterRing.setAttribute('cx', `${node.cx}`);
+          activeOuterRing.setAttribute('cy', `${node.cy}`);
+          activeOuterRing.setAttribute('r', '23');
+          activeOuterRing.setAttribute('fill', 'none');
+          activeOuterRing.setAttribute('stroke', '#facc15');
+          activeOuterRing.setAttribute('stroke-width', '3');
+          activeOuterRing.setAttribute('filter', 'url(#activeGlow)');
+          activeOuterRing.setAttribute('class', 'active-ring');
+          nodeGroup.appendChild(activeOuterRing);
+
+          // Etiqueta "ACTUAL" sobre el nodo
+          const activeTagBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          activeTagBg.setAttribute('x', `${node.cx - 22}`);
+          activeTagBg.setAttribute('y', `${node.cy - 34}`);
+          activeTagBg.setAttribute('width', '44');
+          activeTagBg.setAttribute('height', '13');
+          activeTagBg.setAttribute('rx', '3');
+          activeTagBg.setAttribute('fill', '#facc15');
+          nodeGroup.appendChild(activeTagBg);
+
+          const activeTagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          activeTagText.setAttribute('x', `${node.cx}`);
+          activeTagText.setAttribute('y', `${node.cy - 24.5}`);
+          activeTagText.setAttribute('text-anchor', 'middle');
+          activeTagText.setAttribute('font-family', 'Inter, sans-serif');
+          activeTagText.setAttribute('font-size', '7.5');
+          activeTagText.setAttribute('font-weight', '800');
+          activeTagText.setAttribute('fill', '#090d16');
+          activeTagText.textContent = 'ACTUAL';
+          nodeGroup.appendChild(activeTagText);
+        }
+
+        // Círculo principal
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', `${node.cx}`);
+        circle.setAttribute('cy', `${node.cy}`);
+        circle.setAttribute('r', `${nodeRadius}`);
+        circle.setAttribute('fill', isMaxNode ? 'url(#gradMax)' : 'url(#gradMin)');
+        circle.setAttribute('stroke', isActive ? '#fef08a' : (isMaxNode ? '#93c5fd' : '#fca5a5'));
+        circle.setAttribute('stroke-width', isActive ? '2.5' : '1.5');
+        nodeGroup.appendChild(circle);
+
+        // Texto del estado [f1, f2]
+        const textState = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        textState.setAttribute('x', `${node.cx}`);
+        textState.setAttribute('y', `${node.cy - 2}`);
+        textState.setAttribute('text-anchor', 'middle');
+        textState.setAttribute('font-family', 'Inter, sans-serif');
+        textState.setAttribute('font-size', '10');
+        textState.setAttribute('font-weight', 'bold');
+        textState.setAttribute('fill', '#ffffff');
+        textState.textContent = `[${node.boardState}]`;
+        nodeGroup.appendChild(textState);
+
+        // Sub-etiqueta MAX / MIN
+        const textPlayer = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        textPlayer.setAttribute('x', `${node.cx}`);
+        textPlayer.setAttribute('y', `${node.cy + 9}`);
+        textPlayer.setAttribute('text-anchor', 'middle');
+        textPlayer.setAttribute('font-family', 'Inter, sans-serif');
+        textPlayer.setAttribute('font-size', '7');
+        textPlayer.setAttribute('font-weight', 'bold');
+        textPlayer.setAttribute('fill', isMaxNode ? '#bfdbfe' : '#fecaca');
+        textPlayer.textContent = node.player;
+        nodeGroup.appendChild(textPlayer);
+
+        // Badge con el valor Minimax al completarse
+        if (hasEvaluatedValue) {
+          const valBadgeY = node.cy + 26;
+          const isWinForMax = evaluatedVal === 1;
+
+          const valBadge = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          valBadge.setAttribute('x', `${node.cx - 18}`);
+          valBadge.setAttribute('y', `${valBadgeY - 7}`);
+          valBadge.setAttribute('width', '36');
+          valBadge.setAttribute('height', '14');
+          valBadge.setAttribute('rx', '3');
+          valBadge.setAttribute('fill', isWinForMax ? '#064e3b' : '#7f1d1d');
+          valBadge.setAttribute('stroke', isWinForMax ? '#10b981' : '#ef4444');
+          valBadge.setAttribute('stroke-width', '1');
+          nodeGroup.appendChild(valBadge);
+
+          const valText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          valText.setAttribute('x', `${node.cx}`);
+          valText.setAttribute('y', `${valBadgeY + 3.5}`);
+          valText.setAttribute('text-anchor', 'middle');
+          valText.setAttribute('font-family', 'monospace');
+          valText.setAttribute('font-size', '8');
+          valText.setAttribute('font-weight', 'bold');
+          valText.setAttribute('fill', isWinForMax ? '#6ee7b7' : '#fca5a5');
+          valText.textContent = `v: ${evaluatedVal > 0 ? '+1' : evaluatedVal}`;
+          nodeGroup.appendChild(valText);
+        }
+
+        svgNodesLayer.appendChild(nodeGroup);
+      }
+    }
+
+    // ==========================================================
+    // 8. CONTROLADOR DE PAN & ZOOM INTERACTIVO
+    // ==========================================================
+    function applyTransform() {
+      treeSvg.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom.toFixed(3)})`;
+      zoomLevel.textContent = `${Math.round(currentZoom * 100)}%`;
+    }
+
+    // Arrastre libre con el mouse (Drag to Pan)
+    treeViewport.addEventListener('mousedown', (e) => {
+      // Ignorar si hace clic en tarjetas flotantes o botones
+      if (e.target.closest('#alphaBetaFloatingCard') || e.target.closest('button')) return;
+      isDragging = true;
+      dragStartX = e.clientX - panX;
+      dragStartY = e.clientY - panY;
+      treeViewport.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      panX = e.clientX - dragStartX;
+      panY = e.clientY - dragStartY;
+      applyTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        treeViewport.style.cursor = 'grab';
+      }
+    });
+
+    // Zoom con rueda del ratón (Wheel Zoom)
+    treeViewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+      const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.35), 3.2);
+
+      // Centrar zoom suavemente hacia el cursor
+      const rect = treeViewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left - rect.width / 2;
+      const mouseY = e.clientY - rect.top - rect.height / 2;
+
+      panX -= mouseX * (newZoom / currentZoom - 1) * 0.4;
+      panY -= mouseY * (newZoom / currentZoom - 1) * 0.4;
+
+      currentZoom = newZoom;
+      applyTransform();
+    }, { passive: false });
+
+    // Botones de Zoom
+    zoomInBtn.addEventListener('click', () => {
+      if (currentZoom < 3.0) {
+        currentZoom = Math.min(currentZoom + 0.18, 3.2);
+        applyTransform();
+      }
+    });
+
+    zoomOutBtn.addEventListener('click', () => {
+      if (currentZoom > 0.4) {
+        currentZoom = Math.max(currentZoom - 0.18, 0.35);
+        applyTransform();
+      }
+    });
+
+    resetViewBtn.addEventListener('click', () => {
+      panX = 0;
+      panY = 0;
+      currentZoom = 1;
+      applyTransform();
+    });
+
+    // ==========================================================
+    // 9. CONTROLES DE REPRODUCCIÓN Y TECLADO
+    // ==========================================================
+    btnNextStep.addEventListener('click', () => {
+      if (currentStep < frames.length - 1) {
+        currentStep++;
+        renderStep(currentStep);
+      }
+    });
+
+    btnPrevStep.addEventListener('click', () => {
+      if (currentStep > 0) {
+        currentStep--;
+        renderStep(currentStep);
+      }
+    });
+
+    stepProgressBar.addEventListener('input', (e) => {
+      currentStep = parseInt(e.target.value, 10);
+      renderStep(currentStep);
+    });
+
+    btnAutoPlay.addEventListener('click', () => {
+      isAutoPlaying = !isAutoPlaying;
+
+      if (isAutoPlaying) {
+        autoPlayLabel.textContent = "Pausar";
+        btnAutoPlay.classList.remove('bg-blue-600', 'hover:bg-blue-500');
+        btnAutoPlay.classList.add('bg-amber-600', 'hover:bg-amber-500');
+        playIconSvg.innerHTML = '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />';
+        
+        autoPlayInterval = setInterval(() => {
+          if (currentStep < frames.length - 1) {
+            currentStep++;
+            renderStep(currentStep);
+          } else {
+            btnAutoPlay.click();
+          }
+        }, 800);
+
+      } else {
+        clearInterval(autoPlayInterval);
+        autoPlayLabel.textContent = "Auto Play";
+        btnAutoPlay.classList.remove('bg-amber-600', 'hover:bg-amber-500');
+        btnAutoPlay.classList.add('bg-blue-600', 'hover:bg-blue-500');
+        playIconSvg.innerHTML = '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />';
+      }
+    });
+
+    btnReset.addEventListener('click', () => {
+      if (isAutoPlaying) {
+        btnAutoPlay.click();
+      }
+      currentStep = 0;
+      renderStep(currentStep);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') {
+        btnNextStep.click();
+      } else if (e.key === 'ArrowLeft') {
+        btnPrevStep.click();
+      } else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        btnAutoPlay.click();
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initSimulator();
+    });
+  </script>
+</body>
+</html>
